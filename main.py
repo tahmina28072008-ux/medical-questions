@@ -1,22 +1,26 @@
 import os
 import json
 import traceback
-from flask import Flask, request, jsonify
 import requests
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
 # -------------------------------
 # Gemini API Configuration
 # -------------------------------
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")  # Store key in Cloud Run env var
-GEMINI_ENDPOINT = "https://gemini.googleapis.com/v1alpha2/chat/completions"
+# Use an empty string for the API key in the code.
+# The runtime environment on Google Cloud Run will provide it.
+# The API key will be passed as a query parameter, not a header.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyANRWJ2Xmiz7I54kqJrjCOOV2-nrwRgQGw")
+GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent"
 
 # -------------------------------
 # Webhook endpoint
 @app.route('/')
 def home():
     return "Webhook is running successfully!"
+
 # -------------------------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -57,38 +61,54 @@ def webhook():
 # -------------------------------
 def generate_gemini_answer(question):
     """
-    Uses Gemini API to answer medical questions.
+    Uses Gemini API to answer medical questions with a disclaimer.
     """
     try:
-        headers = {
-            "Authorization": f"Bearer {GEMINI_API_KEY}",
-            "Content-Type": "application/json"
+        # Create a system instruction that includes the safety disclaimer.
+        system_instruction = {
+            "parts": [{
+                "text": "You are a helpful and safe medical information assistant. Provide accurate medical information for educational purposes only. Always include a clear disclaimer that the information is not a substitute for professional medical advice, diagnosis, or treatment. Never provide a diagnosis or recommend a treatment."
+            }]
         }
 
+        # Create the user's prompt.
+        user_prompt = {
+            "parts": [{
+                "text": question
+            }]
+        }
+
+        # Construct the payload for the Gemini API call
         payload = {
-            "model": "gemini-1.5-turbo",  # or another Gemini model
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a helpful and safe medical assistant. Provide accurate medical info and include a disclaimer that it's for educational purposes only."
-                },
+            "systemInstruction": system_instruction,
+            "contents": [
                 {
                     "role": "user",
-                    "content": question
+                    "parts": [{"text": question}]
                 }
             ],
-            "temperature": 0.7,
-            "max_output_tokens": 300
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 300,
+            }
         }
+        
+        # Add the API key to the request URL as a query parameter.
+        api_url = f"{GEMINI_ENDPOINT}?key={GEMINI_API_KEY}"
 
-        response = requests.post(GEMINI_ENDPOINT, headers=headers, json=payload)
-        response.raise_for_status()
+        # Make the API request
+        response = requests.post(api_url, json=payload)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        
         data = response.json()
-
-        # Extract the assistant's answer
-        answer = data["choices"][0]["message"]["content"]
+        
+        # Extract the assistant's answer from the new API response structure.
+        answer = data['candidates'][0]['content']['parts'][0]['text']
         return answer.strip()
 
+    except requests.exceptions.RequestException as e:
+        print(f"❌ HTTP request failed: {e}")
+        return "Sorry, I couldn't connect to the information service. Please try again later."
     except Exception as e:
         print(f"❌ Error generating Gemini answer: {e}")
         traceback.print_exc()
