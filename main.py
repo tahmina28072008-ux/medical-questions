@@ -14,6 +14,9 @@ GEMINI_ENDPOINT = "https://gemini.googleapis.com/v1alpha2/chat/completions"
 
 # -------------------------------
 # Webhook endpoint
+@app.route('/')
+def home():
+    return "Webhook is running successfully!"
 # -------------------------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
